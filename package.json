@@ -1,0 +1,12 @@
+{
+  "name": "card-game-multiplayer",
+  "version": "1.0.0",
+  "description": "Мережева карткова гра (сервер + веб-клієнт)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
