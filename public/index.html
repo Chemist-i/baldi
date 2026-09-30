@@ -1,1 +1,281 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Карткова гра (мережева)</title>
+<style>
+  :root{
+    --bg:#0f6b3a; --card-bg:#fff; --card-text:#111; --text:#fff; --accent:#ffcc33;
+    box-sizing:border-box;
+  }
+  html,body{height:100%;margin:0;}
+  body{ background:var(--bg); color:var(--text); font-family:system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center; padding:10px; }
+  #lobby, #game{width:100%; max-width:640px;}
+  label{display:block; margin:8px 0 4px;}
+  select,input,button{font-size:1rem; padding:6px 10px; border-radius:8px; border:none;}
+  button{background:var(--accent); cursor:pointer; margin:4px 2px;}
+  button:disabled{opacity:.4; cursor:not-allowed;}
+  .card{ display:inline-block; background:var(--card-bg); color:var(--card-text);
+    border-radius:8px; padding:8px 10px; margin:3px; min-width:34px; text-align:center;
+    font-weight:bold; cursor:pointer; user-select:none; box-shadow:0 2px 4px rgba(0,0,0,.3); }
+  .card.red{color:#c0392b;}
+  .card.legal{ box-shadow:0 0 0 3px #2ecc71; }
+  .card.illegal{ opacity:.35; cursor:not-allowed; }
+  .tcard-wrap{ display:inline-block; text-align:center; margin:3px; vertical-align:top; }
+  .tcard-owner{ font-size:.65rem; opacity:.8; }
+  #tableArea{background:rgba(0,0,0,.2); border-radius:10px; padding:10px; margin:10px 0; min-height:60px;}
+  #playersArea{margin:8px 0;}
+  .pRow{background:rgba(0,0,0,.18); border-radius:6px; padding:4px 8px; margin:3px 0; font-size:.9rem;}
+  .pRow.current{background:rgba(0,0,0,.35); font-weight:bold;}
+  .pRow.out{opacity:.5;}
+  #log{background:rgba(0,0,0,.25); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:.85rem; width:100%;}
+  .hidden{display:none;}
+  #roomCodeBox{font-size:1.2rem; font-weight:bold; background:rgba(0,0,0,.25); padding:6px 10px; border-radius:8px; display:inline-block;}
+  #errorBox{color:#ffb3b3; min-height:1.2em; margin:4px 0;}
 
+  #rulesOverlay{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.6);
+    align-items:center; justify-content:center; z-index:100; padding:16px; }
+  #rulesOverlay.open{ display:flex; }
+  #rulesBox{ background:var(--card-bg); color:var(--card-text); border-radius:10px;
+    max-width:560px; width:100%; max-height:80vh; overflow-y:auto; padding:16px 18px; }
+  #rulesBox table{width:100%; border-collapse:collapse; font-size:.85rem;}
+  #rulesBox td{border-bottom:1px solid #ccc; padding:4px 6px; vertical-align:top;}
+  #rulesBox ol{font-size:.9rem; padding-left:20px;}
+</style>
+</head>
+<body>
+
+<!-- ==== ЛОБІ: створити або приєднатись до кімнати ==== -->
+<div id="lobby">
+  <h2>Карткова гра — мережева гра</h2>
+  <label>Ваше ім'я: <input id="nameInput" maxlength="20" placeholder="Гравець"></label>
+
+  <h3>Створити нову кімнату</h3>
+  <label>Розмір колоди:
+    <select id="deckSize">
+      <option value="36">36 карт</option>
+      <option value="52">52 карти</option>
+    </select>
+  </label>
+  <button id="createBtn">Створити кімнату</button>
+
+  <h3>Або приєднатись до існуючої</h3>
+  <label>Код кімнати: <input id="codeInput" maxlength="4" style="text-transform:uppercase" placeholder="ABCD"></label>
+  <button id="joinBtn">Приєднатись</button>
+
+  <div id="errorBox"></div>
+</div>
+
+<!-- ==== ЕКРАН ОЧІКУВАННЯ / ГРИ ==== -->
+<div id="game" class="hidden">
+  <div>Код кімнати: <span id="roomCodeBox"></span> (дайте цей код іншим гравцям)</div>
+  <div id="playersArea"></div>
+  <button id="startBtn" class="hidden">Почати гру</button>
+
+  <div id="tableArea" class="hidden"></div>
+  <div id="handArea"></div>
+  <div id="actionsArea" class="hidden">
+    <button id="coverBtn" disabled>Накрити обрану карту</button>
+    <button id="takeBtn">Не можу/не хочу — забрати карту зі столу</button>
+  </div>
+  <div>
+    <button id="restartBtn" class="hidden">Почати гру наново</button>
+    <button id="rulesBtn">📖 Правила</button>
+  </div>
+  <div id="log"></div>
+</div>
+
+<!-- ==== СПЛИВАЮЧЕ ВІКНО З ПРАВИЛАМИ ==== -->
+<div id="rulesOverlay">
+  <div id="rulesBox">
+    <h2>Правила гри</h2>
+    <h3>Терміни</h3>
+    <table>
+      <tr><td><b>Стіл (черга)</b></td><td>Карти, покладені у поточному раунді. Кожна наступна карта кладеться поверх — має накрити попередню.</td></tr>
+      <tr><td><b>Верхня карта</b></td><td>Остання карта в черзі столу — саме її зараз треба накрити.</td></tr>
+      <tr><td><b>Найстаріша карта</b></td><td>Перша карта, покладена в поточному раунді — саме її забирають при невдалому накритті.</td></tr>
+      <tr><td><b>Козир</b></td><td>Чирва (♥) — б'є будь-яку іншу масть, крім піки.</td></tr>
+      <tr><td><b>Виняток піки</b></td><td>Піку (♠) можна накрити лише пікою більшого номіналу.</td></tr>
+      <tr><td><b>Активний гравець</b></td><td>Гравець, який ще не спорожнив руку.</td></tr>
+      <tr><td><b>Відбій</b></td><td>Успішне завершення раунду: стіл очищується без штрафу нікому.</td></tr>
+      <tr><td><b>Атакуючий</b></td><td>Гравець, який починає раунд першою картою на порожньому столі.</td></tr>
+    </table>
+    <h3>Правила</h3>
+    <ol>
+      <li>Колода — 36 або 52 карти.</li>
+      <li>Карти роздаються всім гравцям порівну; залишок не використовується.</li>
+      <li>Перший раунд починає гравець за жеребкуванням.</li>
+      <li>Атакуючий кладе на порожній стіл будь-яку карту.</li>
+      <li>Наступний гравець накриває верхню карту старшою карткою тієї ж масті або козирем — з винятком для піки.</li>
+      <li>Піку накриває лише піка більшого номіналу.</li>
+      <li>Не можете/не хочете накрити — берете найстарішу карту зі столу.</li>
+      <li>Після взяття карти хід іде до наступного гравця по колу.</li>
+      <li>Раунд завершується відбоєм, коли карт на столі стане стільки ж, скільки активних гравців.</li>
+      <li>Гравець без карт вибуває (безпечний).</li>
+      <li>Останній активний гравець з картами — програє.</li>
+      <li>Всі спорожнили руки одночасно — нічия.</li>
+    </ol>
+    <button id="rulesCloseBtn">Закрити</button>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   Клієнт: підключення до сервера через WebSocket
+   ================================================================ */
+
+// Визначаємо адресу сервера: той самий хост/порт, з якого завантажена ця сторінка,
+// але з протоколом ws:// (звичайний) або wss:// (якщо сторінка відкрита по https)
+const wsProtocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+const ws = new WebSocket(wsProtocol + location.host);
+
+let myIdx = null;        // мій індекс гравця в кімнаті
+let lastState = null;     // останній отриманий стан гри від сервера
+let selectedCardIdx = null; // яку зі своїх карт я обрав
+
+ws.onopen = () => console.log('З\'єднання із сервером встановлено.');
+
+ws.onmessage = (ev) => {
+  const msg = JSON.parse(ev.data);
+
+  if(msg.type === 'joined'){
+    myIdx = msg.playerIdx;
+    document.getElementById('lobby').classList.add('hidden');
+    document.getElementById('game').classList.remove('hidden');
+    document.getElementById('roomCodeBox').textContent = msg.roomCode;
+    if(msg.isHost) document.getElementById('startBtn').classList.remove('hidden');
+
+  } else if(msg.type === 'error'){
+    document.getElementById('errorBox').textContent = msg.message;
+
+  } else if(msg.type === 'state'){
+    lastState = msg;
+    selectedCardIdx = null;
+    render();
+  }
+};
+
+ws.onclose = () => {
+  document.getElementById('errorBox').textContent = 'З\'єднання із сервером розірвано. Оновіть сторінку.';
+};
+
+/* ================================================================
+   Дії лобі
+   ================================================================ */
+
+document.getElementById('createBtn').onclick = () => {
+  const name = document.getElementById('nameInput').value.trim() || 'Гравець 1';
+  const deckSize = parseInt(document.getElementById('deckSize').value, 10);
+  ws.send(JSON.stringify({ type:'create', name, deckSize }));
+};
+
+document.getElementById('joinBtn').onclick = () => {
+  const name = document.getElementById('nameInput').value.trim() || undefined;
+  const code = document.getElementById('codeInput').value.trim().toUpperCase();
+  if(code.length !== 4){ document.getElementById('errorBox').textContent = 'Код кімнати складається з 4 літер.'; return; }
+  ws.send(JSON.stringify({ type:'join', name, code }));
+};
+
+document.getElementById('startBtn').onclick = () => ws.send(JSON.stringify({ type:'start' }));
+document.getElementById('restartBtn').onclick = () => ws.send(JSON.stringify({ type:'restart' }));
+
+document.getElementById('rulesBtn').onclick = () => document.getElementById('rulesOverlay').classList.add('open');
+document.getElementById('rulesCloseBtn').onclick = () => document.getElementById('rulesOverlay').classList.remove('open');
+document.getElementById('rulesOverlay').onclick = (e) => { if(e.target.id === 'rulesOverlay') e.target.classList.remove('open'); };
+
+/* ================================================================
+   Рендер стану гри, отриманого від сервера
+   ================================================================ */
+
+function cardHtml(c, opts){
+  const classes = ['card'];
+  if(c.red) classes.push('red');
+  if(opts && opts.legalClass) classes.push(opts.legal ? 'legal' : 'illegal');
+  const style = opts && opts.outline ? `style="outline:${opts.outline}"` : '';
+  return `<span class="${classes.join(' ')}" ${style} data-idx="${opts ? opts.idx : ''}">${c.label}</span>`;
+}
+
+function render(){
+  if(!lastState) return;
+  const s = lastState;
+
+  // --- список гравців (видно кількість карт кожного, не самі карти) ---
+  const playersEl = document.getElementById('playersArea');
+  playersEl.innerHTML = s.players.map(p => {
+    const cls = ['pRow'];
+    if(p.isCurrent) cls.push('current');
+    if(p.out) cls.push('out');
+    const you = p.isYou ? ' (Ви)' : '';
+    const disc = p.connected ? '' : ' [відключився]';
+    return `<div class="${cls.join(' ')}">${p.name}${you}${disc} — карт: ${p.count}${p.out ? ' [вибув]' : ''}</div>`;
+  }).join('');
+
+  if(!s.started){
+    document.getElementById('tableArea').classList.add('hidden');
+    document.getElementById('actionsArea').classList.add('hidden');
+    return;
+  }
+
+  document.getElementById('startBtn').classList.add('hidden');
+  document.getElementById('tableArea').classList.remove('hidden');
+  document.getElementById('actionsArea').classList.remove('hidden');
+  if(myIdx === 0) document.getElementById('restartBtn').classList.remove('hidden');
+
+  // --- стіл ---
+  const tableEl = document.getElementById('tableArea');
+  if(s.table.length === 0){
+    tableEl.innerHTML = `Стіл порожній — покладіть будь-яку карту. (треба ${s.needed} карт(и) для відбою)`;
+  } else {
+    tableEl.innerHTML = `Стіл (${s.table.length}/${s.needed} для відбою): ` + s.table.map(entry => {
+      let style = '';
+      if(entry.isTop) style = 'outline:3px solid var(--accent);';
+      else if(entry.isOldest) style = 'outline:3px dashed #ff6b6b;';
+      return `<span class="tcard-wrap"><span class="card ${entry.red?'red':''}" style="${style}">${entry.label}</span>`
+           + `<div class="tcard-owner">${entry.ownerName}</div></span>`;
+    }).join('');
+  }
+
+  // --- ваша рука ---
+  const handEl = document.getElementById('handArea');
+  if(s.finished){
+    handEl.innerHTML = '<b>Гру завершено.</b>';
+  } else {
+    handEl.innerHTML = s.yourHand.map((c, idx) => {
+      const classes = ['card'];
+      if(c.red) classes.push('red');
+      classes.push(c.legal ? 'legal' : 'illegal');
+      const outline = (idx === selectedCardIdx) ? 'outline:3px solid #fff;' : '';
+      return `<span class="${classes.join(' ')}" style="${outline}" data-idx="${idx}">${c.label}</span>`;
+    }).join('');
+    // Навішуємо обробники кліків на кожну карту (тільки дозволені реагують вибором)
+    Array.from(handEl.children).forEach((el, idx) => {
+      if(s.yourHand[idx].legal){
+        el.onclick = () => { selectedCardIdx = idx; render(); };
+      }
+    });
+  }
+
+  // --- кнопки дій ---
+  const coverBtn = document.getElementById('coverBtn');
+  const takeBtn = document.getElementById('takeBtn');
+  const top = s.table.length ? s.table[s.table.length-1] : null;
+
+  coverBtn.disabled = s.finished || !s.isYourTurn || selectedCardIdx === null;
+  takeBtn.disabled = s.finished || !s.isYourTurn || s.table.length === 0;
+  coverBtn.textContent = top === null ? 'Покласти карту (відкрити раунд)' : 'Накрити обрану карту';
+
+  coverBtn.onclick = () => {
+    if(selectedCardIdx === null) return;
+    const type = top === null ? 'playOpening' : 'cover';
+    ws.send(JSON.stringify({ type, cardIdx: selectedCardIdx }));
+  };
+  takeBtn.onclick = () => ws.send(JSON.stringify({ type:'take' }));
+
+  // --- журнал подій ---
+  document.getElementById('log').innerHTML = s.log.map(l => `<div>${l}</div>`).join('');
+}
+</script>
+</body>
+</html>
