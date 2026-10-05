@@ -97,10 +97,41 @@ function createRoom(deckSize){
     lastCovererIdx: null,// хто останній успішно поклав карту
     started: false,
     finished: false,
-    log: []              // останні події для показу в чаті/журналі
+    log: [],             // останні події для показу в чаті/журналі
+    cleanupTimeout: null // id таймера відкладеного видалення кімнати (null = не заплановано)
   };
   rooms.set(room.code, room);
   return room;
+}
+
+// Скільки часу чекати перед видаленням кімнати після того, як усі гравці вийшли
+const ROOM_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 хвилин
+
+// Чи всі гравці кімнати зараз відключені (ws === null в кожного)
+function allDisconnected(room){
+  return room.players.every(p => !p.ws);
+}
+
+// Планує видалення кімнати з пам'яті через ROOM_CLEANUP_DELAY_MS,
+// якщо до того часу ніхто так і не повернувся
+function scheduleRoomCleanup(room){
+  if(room.cleanupTimeout) return; // вже заплановано - не дублюємо таймер
+  room.cleanupTimeout = setTimeout(() => {
+    if(allDisconnected(room)){ // перевіряємо ще раз на момент спрацювання (раптом хтось зайшов)
+      rooms.delete(room.code);
+      console.log(`Кімнату ${room.code} видалено з пам'яті (усі вийшли, минуло ${ROOM_CLEANUP_DELAY_MS/60000} хв).`);
+    } else {
+      room.cleanupTimeout = null; // хтось повернувся - скасовуємо, таймер більше не актуальний
+    }
+  }, ROOM_CLEANUP_DELAY_MS);
+}
+
+// Скасовує заплановане видалення (викликати, коли в кімнату хтось знову заходить/лишається)
+function cancelRoomCleanup(room){
+  if(room.cleanupTimeout){
+    clearTimeout(room.cleanupTimeout);
+    room.cleanupTimeout = null;
+  }
 }
 
 function activePlayerCount(room){
@@ -304,6 +335,7 @@ wss.on('connection', (ws) => {
     } else if(msg.type === 'join'){
       room = rooms.get((msg.code || '').toUpperCase());
       if(!room){ ws.send(JSON.stringify({type:'error', message:'Кімнату не знайдено. Перевірте код.'})); return; }
+      cancelRoomCleanup(room); // хтось прийшов - скасовуємо заплановане видалення
       if(room.started){ ws.send(JSON.stringify({type:'error', message:'Гра в цій кімнаті вже почалась.'})); return; }
       if(room.players.length >= 6){ ws.send(JSON.stringify({type:'error', message:'У кімнаті вже 6 гравців (максимум).'})); return; }
       playerIdx = room.players.length;
@@ -350,6 +382,11 @@ wss.on('connection', (ws) => {
       addLog(room, `${room.players[playerIdx].name} відключився.`);
       room.players[playerIdx].ws = null;
       broadcastState(room);
+
+      // Якщо це був останній підключений гравець - плануємо видалення кімнати через 5 хв
+      if(allDisconnected(room)){
+        scheduleRoomCleanup(room);
+      }
     }
   });
 });
