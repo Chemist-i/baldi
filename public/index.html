@@ -47,6 +47,8 @@
 </head>
 <body>
 
+<h1>Балди</h1>
+
 <!-- ==== ЛОБІ: створити або приєднатись до кімнати ==== -->
 <div id="lobby">
   <h2>Карткова гра — мережева гра</h2>
@@ -78,7 +80,7 @@
   <div id="handArea"></div>
   <div id="actionsArea" class="hidden">
     <button id="coverBtn" disabled>Накрити обрану карту</button>
-    <button id="takeBtn">Не можу/не хочу — забрати карту зі столу</button>
+    <button id="takeBtn">Взяти карту зі столу</button>
   </div>
   <div>
     <button id="restartBtn" class="hidden">Почати гру наново</button>
@@ -246,7 +248,7 @@ function render(){
       const classes = ['card'];
       if(c.red) classes.push('red');
       classes.push(c.legal ? 'legal' : 'illegal');
-      const outline = (idx === selectedCardIdx) ? 'outline:3px solid #fff;' : '';
+      const outline = (idx === selectedCardIdx) ? 'outline:3px solid #e74c3c;' : '';
       return `<span class="${classes.join(' ')}" style="${outline}" data-idx="${idx}">${c.label}</span>`;
     }).join('');
     // Навішуємо обробники кліків на кожну карту (тільки дозволені реагують вибором)
