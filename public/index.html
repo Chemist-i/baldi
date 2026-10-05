@@ -18,8 +18,8 @@
   button{background:var(--accent); cursor:pointer; margin:4px 2px;}
   button:disabled{opacity:.4; cursor:not-allowed;}
   .card{ display:inline-block; background:var(--card-bg); color:var(--card-text);
-    border-radius:8px; padding:8px 10px; margin:3px; min-width:34px; text-align:center;
-    font-weight:bold; cursor:pointer; user-select:none; box-shadow:0 2px 4px rgba(0,0,0,.3); }
+    border-radius:12px; padding:12px 15px; margin:4px; min-width:51px; text-align:center;
+    font-weight:bold; font-size:1.5rem; cursor:pointer; user-select:none; box-shadow:0 2px 4px rgba(0,0,0,.3); }
   .card.red{color:#c0392b;}
   .card.legal{ box-shadow:0 0 0 3px #2ecc71; }
   .card.illegal{ opacity:.35; cursor:not-allowed; }
@@ -43,14 +43,22 @@
   #rulesBox table{width:100%; border-collapse:collapse; font-size:.85rem;}
   #rulesBox td{border-bottom:1px solid #ccc; padding:4px 6px; vertical-align:top;}
   #rulesBox ol{font-size:.9rem; padding-left:20px;}
+
+  /* --- Модальне вікно завершення гри --- */
+  #gameOverOverlay{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
+    align-items:center; justify-content:center; z-index:110; padding:16px; }
+  #gameOverOverlay.open{ display:flex; }
+  #gameOverBox{ background:var(--card-bg); color:var(--card-text); border-radius:12px;
+    max-width:420px; width:100%; padding:24px 20px; text-align:center; }
+  #gameOverBox h2{margin-top:0;}
+  #gameOverResult{font-size:1.2rem; font-weight:bold; margin:10px 0 18px;}
 </style>
 </head>
 <body>
 
-<h1>Балди</h1>
-
 <!-- ==== ЛОБІ: створити або приєднатись до кімнати ==== -->
 <div id="lobby">
+  <h1>Балди</h1>
   <h2>Карткова гра — мережева гра</h2>
   <label>Ваше ім'я: <input id="nameInput" maxlength="20" placeholder="Гравець"></label>
 
@@ -123,6 +131,15 @@
   </div>
 </div>
 
+<!-- ==== МОДАЛЬНЕ ВІКНО ЗАВЕРШЕННЯ ГРИ ==== -->
+<div id="gameOverOverlay">
+  <div id="gameOverBox">
+    <h2>Гру завершено</h2>
+    <div id="gameOverResult"></div>
+    <button id="gameOverCloseBtn">Зрозуміло</button>
+  </div>
+</div>
+
 <script>
 /* ================================================================
    Клієнт: підключення до сервера через WebSocket
@@ -136,6 +153,7 @@ const ws = new WebSocket(wsProtocol + location.host);
 let myIdx = null;        // мій індекс гравця в кімнаті
 let lastState = null;     // останній отриманий стан гри від сервера
 let selectedCardIdx = null; // яку зі своїх карт я обрав
+let gameOverShown = false;  // чи вже показали модалку завершення для цієї партії (щоб не відкривати повторно)
 
 ws.onopen = () => console.log('З\'єднання із сервером встановлено.');
 
@@ -153,6 +171,7 @@ ws.onmessage = (ev) => {
     document.getElementById('errorBox').textContent = msg.message;
 
   } else if(msg.type === 'state'){
+    if(!msg.finished) gameOverShown = false; // нова партія (перезапуск) - дозволяємо показати модалку знову наступного разу
     lastState = msg;
     selectedCardIdx = null;
     render();
@@ -186,6 +205,8 @@ document.getElementById('restartBtn').onclick = () => ws.send(JSON.stringify({ t
 document.getElementById('rulesBtn').onclick = () => document.getElementById('rulesOverlay').classList.add('open');
 document.getElementById('rulesCloseBtn').onclick = () => document.getElementById('rulesOverlay').classList.remove('open');
 document.getElementById('rulesOverlay').onclick = (e) => { if(e.target.id === 'rulesOverlay') e.target.classList.remove('open'); };
+
+document.getElementById('gameOverCloseBtn').onclick = () => document.getElementById('gameOverOverlay').classList.remove('open');
 
 /* ================================================================
    Рендер стану гри, отриманого від сервера
@@ -277,6 +298,21 @@ function render(){
 
   // --- журнал подій ---
   document.getElementById('log').innerHTML = s.log.map(l => `<div>${l}</div>`).join('');
+
+  // --- модальне вікно завершення гри (показуємо один раз на партію) ---
+  if(s.finished && !gameOverShown){
+    gameOverShown = true;
+    const stillIn = s.players.filter(p => !p.out); // хто лишився активним (з картами) на момент завершення
+    let text;
+    if(stillIn.length === 0){
+      text = 'Нічия! Усі гравці спорожнили руки одночасно.';
+    } else {
+      const loser = stillIn[0];
+      text = `Програв: ${loser.name}${loser.isYou ? ' (Ви)' : ''}`;
+    }
+    document.getElementById('gameOverResult').textContent = text;
+    document.getElementById('gameOverOverlay').classList.add('open');
+  }
 }
 </script>
 </body>
