@@ -26,6 +26,8 @@
   .tcard-wrap{ display:inline-block; text-align:center; margin:3px; vertical-align:top; }
   .tcard-owner{ font-size:.65rem; opacity:.8; }
   #tableArea{background:rgba(0,0,0,.2); border-radius:10px; padding:10px; margin:10px 0; min-height:60px;}
+  #tableLabel{display:block; margin-bottom:6px;} /* заголовок столу на окремому рядку */
+  #tableCards{text-align:center;} /* самі карти столу - по центру */
   #playersArea{margin:8px 0;}
   .pRow{background:rgba(0,0,0,.18); border-radius:6px; padding:4px 8px; margin:3px 0; font-size:.9rem;}
   .pRow.current{background:rgba(0,0,0,.35); font-weight:bold;}
@@ -246,18 +248,20 @@ function render(){
   document.getElementById('actionsArea').classList.remove('hidden');
   if(myIdx === 0) document.getElementById('restartBtn').classList.remove('hidden');
 
-  // --- стіл ---
+  // --- стіл: заголовок на своєму рядку, карти нижче по центру ---
   const tableEl = document.getElementById('tableArea');
   if(s.table.length === 0){
-    tableEl.innerHTML = `Стіл порожній — покладіть будь-яку карту. (треба ${s.needed} карт(и) для відбою)`;
+    tableEl.innerHTML = `<span id="tableLabel">Стіл порожній — покладіть будь-яку карту. (треба ${s.needed} карт(и) для відбою)</span>`;
   } else {
-    tableEl.innerHTML = `Стіл (${s.table.length}/${s.needed} для відбою): ` + s.table.map(entry => {
+    const cardsHtml = s.table.map(entry => {
       let style = '';
       if(entry.isTop) style = 'outline:3px solid var(--accent);';
       else if(entry.isOldest) style = 'outline:3px dashed #ff6b6b;';
       return `<span class="tcard-wrap"><span class="card ${entry.red?'red':''}" style="${style}">${entry.label}</span>`
            + `<div class="tcard-owner">${entry.ownerName}</div></span>`;
     }).join('');
+    tableEl.innerHTML = `<span id="tableLabel">Стіл (${s.table.length}/${s.needed} для відбою):</span>`
+                       + `<div id="tableCards">${cardsHtml}</div>`;
   }
 
   // --- ваша рука ---
