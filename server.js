@@ -98,7 +98,8 @@ function createRoom(deckSize){
     started: false,
     finished: false,
     log: [],             // останні події для показу в чаті/журналі
-    cleanupTimeout: null // id таймера відкладеного видалення кімнати (null = не заплановано)
+    cleanupTimeout: null,// id таймера відкладеного видалення кімнати (null = не заплановано)
+    roundLocked: false   // true на час короткої паузи показу виграшної карти перед очищенням столу
   };
   rooms.set(room.code, room);
   return room;
@@ -154,6 +155,12 @@ function topOfTable(room){
   return pile.length ? pile[pile.length-1].card : null;
 }
 
+// Порядок сортування руки: піка, чирва, бубна, хрест - у кожній масті від старшої до молодшої
+const HAND_SUIT_ORDER = { '♠':0, '♥':1, '♦':2, '♣':3 };
+function sortHand(hand){
+  hand.sort((a,b) => (HAND_SUIT_ORDER[a.suit] - HAND_SUIT_ORDER[b.suit]) || (b.value - a.value));
+}
+
 function addLog(room, msg){
   room.log.unshift(msg);
   if(room.log.length > 50) room.log.pop(); // не тримаємо історію нескінченно
@@ -166,6 +173,7 @@ function startGame(room){
   const perPlayer = Math.floor(deck.length / n); // ділимо порівну, залишок не використовується
   room.players.forEach(p => {
     p.hand = deck.splice(0, perPlayer);
+    sortHand(p.hand); // одразу сортуємо роздану руку для зручного перегляду
     p.out = false;
   });
   room.tablePile = [];
@@ -174,6 +182,7 @@ function startGame(room){
   room.lastCovererIdx = null;
   room.finished = false;
   room.started = true;
+  room.roundLocked = false;
   room.log = [];
   addLog(room, `Гру розпочато. Колода: ${room.deckSize} карт. Починає ${room.players[room.attackerIdx].name}.`);
 }
@@ -193,20 +202,32 @@ function checkEmptyHand(room, player){
   }
 }
 
+// Скільки мілісекунд тримати на екрані виграшну (останню) карту столу перед очищенням
+const ROUND_WIN_PAUSE_MS = 1000;
+
 // Викликається після кожного УСПІШНОГО викладання карти (відкриття чи накриття)
 function afterSuccessfulPlay(room){
   if(room.tablePile.length >= activePlayerCount(room)){
-    addLog(room, `Відбій! На столі назбиралось ${room.tablePile.length} карт. Стіл очищено.`);
-    room.tablePile = [];
-    room.attackerIdx = room.lastCovererIdx;
-    // Той, хто поклав останню карту, зазвичай ходить далі - АЛЕ саме ця карта могла
-    // спорожнити йому руку (він щойно вибув). Гравець без карт не може робити хід,
-    // тож у такому разі передаємо хід наступному ще активному гравцю по колу.
-    if(room.players[room.attackerIdx].out){
-      room.currentIdx = nextActiveIdx(room, room.attackerIdx);
-    } else {
-      room.currentIdx = room.attackerIdx;
-    }
+    // Раунд виграно (відбій). Спочатку просто блокуємо дії і розсилаємо стан як є,
+    // щоб усі гравці встигли побачити останню покладену карту на столі.
+    room.roundLocked = true;
+    broadcastState(room);
+
+    setTimeout(() => {
+      addLog(room, `Відбій! На столі назбиралось ${room.tablePile.length} карт. Стіл очищено.`);
+      room.tablePile = [];
+      room.attackerIdx = room.lastCovererIdx;
+      // Той, хто поклав останню карту, зазвичай ходить далі - АЛЕ саме ця карта могла
+      // спорожнити йому руку (він щойно вибув). Гравець без карт не може робити хід,
+      // тож у такому разі передаємо хід наступному ще активному гравцю по колу.
+      if(room.players[room.attackerIdx].out){
+        room.currentIdx = nextActiveIdx(room, room.attackerIdx);
+      } else {
+        room.currentIdx = room.attackerIdx;
+      }
+      room.roundLocked = false;
+      broadcastState(room);
+    }, ROUND_WIN_PAUSE_MS);
   } else {
     room.currentIdx = nextActiveIdx(room, room.currentIdx);
   }
@@ -215,6 +236,7 @@ function afterSuccessfulPlay(room){
 // Дія: гравець відкриває раунд (стіл порожній) будь-якою карткою
 function actionPlayOpening(room, playerIdx, cardIdx){
   if(room.finished) return 'Гра вже завершена.';
+  if(room.roundLocked) return 'Зачекайте — стіл оновлюється.';
   if(playerIdx !== room.currentIdx) return 'Зараз не ваш хід.';
   if(room.tablePile.length !== 0) return 'Стіл не порожній — використайте "Накрити".';
   const player = room.players[playerIdx];
@@ -231,6 +253,7 @@ function actionPlayOpening(room, playerIdx, cardIdx){
 // Дія: гравець накриває верхню карту столу
 function actionCover(room, playerIdx, cardIdx){
   if(room.finished) return 'Гра вже завершена.';
+  if(room.roundLocked) return 'Зачекайте — стіл оновлюється.';
   if(playerIdx !== room.currentIdx) return 'Зараз не ваш хід.';
   const top = topOfTable(room);
   if(top === null) return 'Стіл порожній — спочатку відкрийте раунд.';
@@ -250,11 +273,13 @@ function actionCover(room, playerIdx, cardIdx){
 // Дія: гравець не може/не хоче накривати - забирає найстарішу карту столу
 function actionTake(room, playerIdx){
   if(room.finished) return 'Гра вже завершена.';
+  if(room.roundLocked) return 'Зачекайте — стіл оновлюється.';
   if(playerIdx !== room.currentIdx) return 'Зараз не ваш хід.';
   if(room.tablePile.length === 0) return 'Стіл порожній, брати нема чого.';
   const player = room.players[playerIdx];
   const taken = room.tablePile.shift(); // найстаріша (перша покладена) карта
   player.hand.push(taken.card);
+  sortHand(player.hand); // після додавання нової карти пересортовуємо руку
   addLog(room, `${player.name} забирає карту ${cardLabel(taken.card)} (клав ${room.players[taken.ownerIdx].name}).`);
   room.currentIdx = nextActiveIdx(room, playerIdx); // хід - до наступного гравця по колу
   return null;
@@ -269,7 +294,7 @@ function broadcastState(room){
   room.players.forEach((viewer, viewerIdx) => {
     if(!viewer.ws || viewer.ws.readyState !== WebSocket.OPEN) return; // гравець відключений
 
-    const isYourTurn = viewerIdx === room.currentIdx && room.started && !room.finished;
+    const isYourTurn = viewerIdx === room.currentIdx && room.started && !room.finished && !room.roundLocked;
 
     const payload = {
       type: 'state',
