@@ -205,9 +205,13 @@ function checkEmptyHand(room, player){
 // Скільки мілісекунд тримати на екрані виграшну (останню) карту столу перед очищенням
 const ROUND_WIN_PAUSE_MS = 1000;
 
-// Викликається після кожного УСПІШНОГО викладання карти (відкриття чи накриття)
-function afterSuccessfulPlay(room){
-  if(room.tablePile.length >= activePlayerCount(room)){
+// Викликається після кожного УСПІШНОГО викладання карти (відкриття чи накриття).
+// neededCount - скільки карт на столі потрібно для відбою. Це знімок кількості активних
+// гравців, зроблений ДО цього ходу (до того, як цей гравець міг вибути) - інакше, якщо
+// саме цей хід спорожнив гравцю руку, поріг хибно зменшився б ще до того, як інші
+// гравці встигли зробити свій хід у цьому ж раунді.
+function afterSuccessfulPlay(room, neededCount){
+  if(room.tablePile.length >= neededCount){
     // Раунд виграно (відбій). Спочатку просто блокуємо дії і розсилаємо стан як є,
     // щоб усі гравці встигли побачити останню покладену карту на столі.
     room.roundLocked = true;
@@ -245,8 +249,9 @@ function actionPlayOpening(room, playerIdx, cardIdx){
   room.tablePile.push({ card, ownerIdx: playerIdx });
   room.lastCovererIdx = playerIdx;
   addLog(room, `${player.name} відкриває раунд картою ${cardLabel(card)}.`);
+  const neededCount = activePlayerCount(room); // знімок ДО перевірки, чи гравець щойно вибув
   checkEmptyHand(room, player);
-  if(!room.finished) afterSuccessfulPlay(room);
+  if(!room.finished) afterSuccessfulPlay(room, neededCount);
   return null; // без помилки
 }
 
@@ -265,8 +270,9 @@ function actionCover(room, playerIdx, cardIdx){
   room.tablePile.push({ card: cand, ownerIdx: playerIdx });
   room.lastCovererIdx = playerIdx;
   addLog(room, `${player.name} накриває картою ${cardLabel(cand)}.`);
+  const neededCount = activePlayerCount(room); // знімок ДО перевірки, чи гравець щойно вибув
   checkEmptyHand(room, player);
-  if(!room.finished) afterSuccessfulPlay(room);
+  if(!room.finished) afterSuccessfulPlay(room, neededCount);
   return null;
 }
 
