@@ -199,7 +199,14 @@ function afterSuccessfulPlay(room){
     addLog(room, `Відбій! На столі назбиралось ${room.tablePile.length} карт. Стіл очищено.`);
     room.tablePile = [];
     room.attackerIdx = room.lastCovererIdx;
-    room.currentIdx = room.lastCovererIdx; // ходить той, хто поклав останню (верхню) карту
+    // Той, хто поклав останню карту, зазвичай ходить далі - АЛЕ саме ця карта могла
+    // спорожнити йому руку (він щойно вибув). Гравець без карт не може робити хід,
+    // тож у такому разі передаємо хід наступному ще активному гравцю по колу.
+    if(room.players[room.attackerIdx].out){
+      room.currentIdx = nextActiveIdx(room, room.attackerIdx);
+    } else {
+      room.currentIdx = room.attackerIdx;
+    }
   } else {
     room.currentIdx = nextActiveIdx(room, room.currentIdx);
   }
